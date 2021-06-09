@@ -209,7 +209,45 @@
                 var customerType = clevertap.profile.getAttribute("Customer type");
                 console.log(customerType);
             }
+            
+            clevertap.notificationCallback = function(msg){
+            //raise the notification viewed and clicked events in the callback
+            clevertap.raiseNotificationViewed();
+            console.log(JSON.stringify(msg));//your custom rendering implementation here
+            var $button = jQuery("<button></button>");//element on whose click you want to raise the notification clicked event
+            $button.click(function(){
+            clevertap.raiseNotificationClicked();
+      });
+                };
         </script>
+        <div class="btn">CLOSE</div> //Box
+        <script>
+        var btn = document.querySelector('.btn');
+        var wrapper = window.parent.document.getElementById('wizParDiv0');
+        btn.addEventListener('click', closePopUp);
+        function closePopUp()
+        { wrapper.remove(); }
+        </script>
+        
+        <div class="btn">CLOSE</div> //Banner
+        <script>
+        var btn = document.querySelector('.btn');
+        var wrapper = window.parent.document.getElementById('wizParDiv2');
+        btn.addEventListener('click', closePopUp);
+        function closePopUp() { wrapper.remove(); }
+        </script>
+        
+        <div class="btn">CLOSE</div>
+        <script>
+        var btn = document.querySelector('.btn');
+        var overlay = window.parent.document.getElementById('intentOpacityDiv');
+        var wrapper = window.parent.document.getElementById('intentPreview');
+        btn.addEventListener('click', closePopUp);
+        function closePopUp()
+        { overlay.remove(); wrapper.remove(); }
+        </script> 
+        
+        
         <link rel="stylesheet" href="/web-sdk-test/style.css" />
         <!-- <br />
         <button type="button" onclick="pushprofile()">Profile Push!</button>
