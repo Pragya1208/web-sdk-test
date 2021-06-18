@@ -211,6 +211,25 @@
             }
             
             </script>
+        
+        <div class="pop">
+    <p><label for="3" class="open">Open Poup!</label></p>
+    <input type="checkbox" id="3" />
+    <div class="modal">
+      <div class="modal__inner">
+          <p>Place here your popup content.</p>
+        <label class="btn-close" id="para" for="3">Close</label>
+      </div>
+    </div>
+</div>
+
+<script>
+var btn = document.querySelector('.btn-close');
+var wrapper = window.parent.document.getElementById('para');
+btn.addEventListener('click', closePopUp);
+function closePopUp()
+{ wrapper.remove(); }
+</script>
  
               
         <link rel="stylesheet" href="/web-sdk-test/style.css" />
