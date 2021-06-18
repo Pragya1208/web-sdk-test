@@ -212,19 +212,19 @@
             
             </script>
         
-        <div class="pop">
-    <p><label for="3" class="open">Open Poup!</label></p>
-    <input type="checkbox" id="3" />
-    <div class="modal">
-      <div class="modal__inner">
-          <p>Place here your popup content.</p>
-        <label class="btn-close" id="para" for="3">Close</label>
-      </div>
-    </div>
-</div>
+            <div class="box">
+              <a id = "para" class="button" href="#">Let me Pop up</a>
+            </div> 
+
+            <div id="popup1" class="overlay">
+         	    <div class="popup" >
+    	     	<h2>Box Popup</h2>
+    		<a class="close" href="#popup1">×</a>
+        	</div>
+          </div>
 
 <script>
-var btn = document.querySelector('.btn-close');
+var btn = document.querySelector('.button');
 var wrapper = window.parent.document.getElementById('para');
 btn.addEventListener('click', closePopUp);
 function closePopUp()
