@@ -2073,9 +2073,15 @@ function __wizrocket() {
     if (url.indexOf("chrome-extension:") != -1) {
       url = url.replace("chrome-extension:", "https:");
     }
+    var ctCbScripts = document.getElementsByClassName('ct-jp-cb');
+    while(ctCbScripts[0]) {
+        ctCbScripts[0].parentNode.removeChild(ctCbScripts[0]);
+    }
+  
     var s = doc.createElement("script");
     s.setAttribute("type", "text/javascript");
     s.setAttribute("src", url);
+    s.setAttribute("class", "ct-jp-cb");
     s.setAttribute("rel", "nofollow");
     s.async = true;
 
