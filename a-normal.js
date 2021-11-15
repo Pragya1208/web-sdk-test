@@ -80,7 +80,9 @@ function __wizrocket() {
     OPTOUT_COOKIE_ENDSWITH: ':OO',
     USEIP_KEY: 'useIP',
     LRU_CACHE: 'WZRK_X',
-    IS_OUL: "isOUL"
+    IS_OUL: "isOUL",
+    FIRE_PUSH_UNREGISTERED: 'WZRK_FPU',
+    PUSH_SUBSCRIPTION_DATA: 'WZRK_PSD'
   };
 
   // path to reference the JS for our dialog
@@ -173,18 +175,8 @@ function __wizrocket() {
               var subscriptionData = JSON.parse(JSON.stringify(subscription));
               subscriptionData['endpoint'] = subscription['deviceToken'];
               subscriptionData['browser'] = 'Safari';
-
-              var payload = subscriptionData;
-              payload = wiz.addSystemDataToObject(payload, true);
-              payload = JSON.stringify(payload);
-              var pageLoadUrl = dataPostURL;
-              pageLoadUrl = wiz.addToURL(pageLoadUrl, "type", "data");
-              pageLoadUrl = wiz.addToURL(pageLoadUrl, "d", wiz.compressData(payload));
-              wiz.fireRequest(pageLoadUrl);
-              //set in localstorage
-              if (wzrk_util.isLocalStorageSupported()) {
-                localStorage.setItem(STRING_CONSTANTS.WEBPUSH_LS_KEY, 'ok');
-              }
+              wiz.saveToLSorCookie(STRING_CONSTANTS.PUSH_SUBSCRIPTION_DATA, subscriptionData);
+              wiz.registerToken(subscriptionData);
               wc.l('Safari Web Push registered. Device Token: ' + subscription['deviceToken']);
             } else if (subscription.permission === 'denied') {
               wc.l('Error subscribing to Safari web push');
@@ -200,7 +192,13 @@ function __wizrocket() {
 
 
     if ('serviceWorker' in navigator) {
-      navigator["serviceWorker"]['register'](serviceWorkerPath)['then'](function () {
+      navigator["serviceWorker"]['register'](serviceWorkerPath)['then'](function (registration) {
+        if (typeof __wzrk_account_id !== "undefined") {
+
+          //shopify accounts , since the service worker is not at root, serviceWorker.ready is never resolved.
+          // hence add a timeout and hope serviceWroker is ready within that time.
+          return new Promise(resolve => setTimeout(() => resolve(registration), 5000));
+        }
         return navigator['serviceWorker']['ready'];
       })['then'](function (serviceWorkerRegistration) {
 
@@ -229,21 +227,12 @@ function __wizrocket() {
           var sessionObj = wiz.getSessionCookieObject();
           // var shouldSendToken = typeof sessionObj['p'] === STRING_CONSTANTS.UNDEFINED || sessionObj['p'] === 1
           //     || sessionObj['p'] === 2 || sessionObj['p'] === 3 || sessionObj['p'] === 4 || sessionObj['p'] === 5;
+
+          wiz.saveToLSorCookie(STRING_CONSTANTS.PUSH_SUBSCRIPTION_DATA, subscriptionData);
           var shouldSendToken = true;
           if (shouldSendToken) {
-            var payload = subscriptionData;
-            payload = wiz.addSystemDataToObject(payload, true);
-            payload = JSON.stringify(payload);
-            var pageLoadUrl = dataPostURL;
-            pageLoadUrl = wiz.addToURL(pageLoadUrl, "type", "data");
-            pageLoadUrl = wiz.addToURL(pageLoadUrl, "d", wiz.compressData(payload));
-            wiz.fireRequest(pageLoadUrl);
-            //set in localstorage
-            if (wzrk_util.isLocalStorageSupported()) {
-              localStorage.setItem(STRING_CONSTANTS.WEBPUSH_LS_KEY, 'ok');
-            }
+            wiz.registerToken(subscriptionData);
           }
-
           if (typeof subscriptionCallback !== "undefined" && typeof subscriptionCallback === "function") {
             subscriptionCallback();
           }
@@ -267,6 +256,22 @@ function __wizrocket() {
       });
     }
   };
+
+  wiz.registerToken = function (subscriptionData) {
+    if (!subscriptionData) return;
+
+    var payload = subscriptionData;
+    payload = wiz.addSystemDataToObject(payload, true);
+    payload = JSON.stringify(payload);
+    var pageLoadUrl = dataPostURL;
+    pageLoadUrl = wiz.addToURL(pageLoadUrl, "type", "data");
+    pageLoadUrl = wiz.addToURL(pageLoadUrl, "d", wiz.compressData(payload));
+    wiz.fireRequest(pageLoadUrl);
+    //set in localstorage
+    if (wzrk_util.isLocalStorageSupported()) {
+      window['localStorage'].setItem(STRING_CONSTANTS.WEBPUSH_LS_KEY, 'ok');
+    }
+  }
 
   wiz.getCleverTapID = function () {
     return gcookie;
@@ -522,7 +527,7 @@ function __wizrocket() {
       return globalCache[property];
     }
     if (wzrk_util.isLocalStorageSupported()) {
-      data = localStorage[property];
+      data = window['localStorage'][property];
     } else {
       data = wiz.readCookie(property);
     }
@@ -539,7 +544,7 @@ function __wizrocket() {
     }
     try {
       if (wzrk_util.isLocalStorageSupported()) {
-        localStorage[property] = encodeURIComponent(JSON.stringify(val));
+        window['localStorage'][property] = encodeURIComponent(JSON.stringify(val));
       } else {
         if (property === STRING_CONSTANTS.GCOOKIE_NAME) {
           wiz.createCookie(property, encodeURIComponent(val), 0, domain);
@@ -699,7 +704,7 @@ function __wizrocket() {
       _arp["skipResARP"] = true;
       return wiz.addToURL(url, 'arp', wiz.compressData(JSON.stringify(_arp)));
     }
-    if (wzrk_util.isLocalStorageSupported() && typeof localStorage[STRING_CONSTANTS.ARP_COOKIE] != STRING_CONSTANTS.UNDEFINED) {
+    if (wzrk_util.isLocalStorageSupported() && typeof window['localStorage'][STRING_CONSTANTS.ARP_COOKIE] != STRING_CONSTANTS.UNDEFINED) {
       return wiz.addToURL(url, 'arp', wiz.compressData(JSON.stringify(wiz.readFromLSorCookie(STRING_CONSTANTS.ARP_COOKIE))));
     }
     return url;
@@ -749,8 +754,12 @@ function __wizrocket() {
     var pageLoadUrl = dataPostURL;
     pageLoadUrl = wiz.addToURL(pageLoadUrl, "type", "data");
     pageLoadUrl = wiz.addToURL(pageLoadUrl, "d", compressedData);
-
+    wiz.saveToLSorCookie(STRING_CONSTANTS.FIRE_PUSH_UNREGISTERED, false)
     wiz.fireRequest(pageLoadUrl, true);
+
+    // Register token for the current user
+    const subscriptionData = wiz.readFromLSorCookie(STRING_CONSTANTS.PUSH_SUBSCRIPTION_DATA);
+    wiz.registerToken(subscriptionData);
   };
 
   var LRU_cache = function (max) {
@@ -915,12 +924,12 @@ function __wizrocket() {
     blockRequeust = false;
     wc.d("Block request is false");
     if (wzrk_util.isLocalStorageSupported()) {
-      delete localStorage[STRING_CONSTANTS.PR_COOKIE];
-      delete localStorage[STRING_CONSTANTS.EV_COOKIE];
-      delete localStorage[STRING_CONSTANTS.META_COOKIE];
-      delete localStorage[STRING_CONSTANTS.ARP_COOKIE];
-      delete localStorage[STRING_CONSTANTS.CAMP_COOKIE_NAME];
-      delete localStorage[STRING_CONSTANTS.CHARGEDID_COOKIE_NAME];
+      delete window['localStorage'][STRING_CONSTANTS.PR_COOKIE];
+      delete window['localStorage'][STRING_CONSTANTS.EV_COOKIE];
+      delete window['localStorage'][STRING_CONSTANTS.META_COOKIE];
+      delete window['localStorage'][STRING_CONSTANTS.ARP_COOKIE];
+      delete window['localStorage'][STRING_CONSTANTS.CAMP_COOKIE_NAME];
+      delete window['localStorage'][STRING_CONSTANTS.CHARGEDID_COOKIE_NAME];
     }
     wiz.deleteCookie(STRING_CONSTANTS.CAMP_COOKIE_NAME, domain);
     wiz.deleteCookie(SCOOKIE_NAME, broadDomain);
@@ -933,14 +942,14 @@ function __wizrocket() {
     wc.d("Block request is true");
     globalCache = {};
     if (wzrk_util.isLocalStorageSupported()) {
-      delete localStorage[STRING_CONSTANTS.GCOOKIE_NAME];
-      delete localStorage[STRING_CONSTANTS.KCOOKIE_NAME];
-      delete localStorage[STRING_CONSTANTS.PR_COOKIE];
-      delete localStorage[STRING_CONSTANTS.EV_COOKIE];
-      delete localStorage[STRING_CONSTANTS.META_COOKIE];
-      delete localStorage[STRING_CONSTANTS.ARP_COOKIE];
-      delete localStorage[STRING_CONSTANTS.CAMP_COOKIE_NAME];
-      delete localStorage[STRING_CONSTANTS.CHARGEDID_COOKIE_NAME];
+      delete window['localStorage'][STRING_CONSTANTS.GCOOKIE_NAME];
+      delete window['localStorage'][STRING_CONSTANTS.KCOOKIE_NAME];
+      delete window['localStorage'][STRING_CONSTANTS.PR_COOKIE];
+      delete window['localStorage'][STRING_CONSTANTS.EV_COOKIE];
+      delete window['localStorage'][STRING_CONSTANTS.META_COOKIE];
+      delete window['localStorage'][STRING_CONSTANTS.ARP_COOKIE];
+      delete window['localStorage'][STRING_CONSTANTS.CAMP_COOKIE_NAME];
+      delete window['localStorage'][STRING_CONSTANTS.CHARGEDID_COOKIE_NAME];
     }
     wiz.deleteCookie(STRING_CONSTANTS.GCOOKIE_NAME, broadDomain);
     wiz.deleteCookie(STRING_CONSTANTS.CAMP_COOKIE_NAME, domain);
@@ -1084,6 +1093,7 @@ function __wizrocket() {
        */
   wiz.processOUL = function (profileArr) {
     var sendOULFlag = true;
+    wiz.saveToLSorCookie(STRING_CONSTANTS.FIRE_PUSH_UNREGISTERED, sendOULFlag)
     var addToK = function (ids) {
       var k = wiz.readFromLSorCookie(STRING_CONSTANTS.KCOOKIE_NAME);
       var g = wiz.readFromLSorCookie(STRING_CONSTANTS.GCOOKIE_NAME);
@@ -1125,10 +1135,11 @@ function __wizrocket() {
 
         if (foundInCache) {
           if (kId !== LRU_CACHE.getLastKey()) {
-            // Same User
+            // Different User
             handleCookieFromCache();
           } else {
             sendOULFlag = false;
+            wiz.saveToLSorCookie(STRING_CONSTANTS.FIRE_PUSH_UNREGISTERED, sendOULFlag)
           }
           var g_from_cache = LRU_CACHE.get(kId);
           LRU_CACHE.set(kId, g_from_cache);
@@ -1136,7 +1147,7 @@ function __wizrocket() {
           gcookie = g_from_cache;
 
           var lastK = LRU_CACHE.getSecondLastKEY();
-          if(lastK !== -1) {
+          if(wiz.readFromLSorCookie(STRING_CONSTANTS.FIRE_PUSH_UNREGISTERED) && lastK !== -1) {
             var lastGUID = LRU_CACHE.cache[lastK];
             unregisterTokenForGuid(lastGUID);
           }
@@ -1150,6 +1161,7 @@ function __wizrocket() {
               sendOULFlag = false;
             }
           }
+          wiz.saveToLSorCookie(STRING_CONSTANTS.FIRE_PUSH_UNREGISTERED, false)
           kId = ids[0];
         }
       }
@@ -1331,22 +1343,22 @@ function __wizrocket() {
   wiz.processPrivacyArray = function (privacyArr) {
     if (wzrk_util.isArray(privacyArr) && privacyArr.length > 0) {
       var privacyObj = privacyArr[0];
+      var optOutObj = privacyArr.find(i => i.hasOwnProperty(STRING_CONSTANTS.OPTOUT_KEY))
+      var ipObj = privacyArr.find(i => i.hasOwnProperty(STRING_CONSTANTS.USEIP_KEY))
       var data = {};
       var profileObj = {};
-      if (privacyObj.hasOwnProperty(STRING_CONSTANTS.OPTOUT_KEY)) {
-        var optOut = privacyObj[STRING_CONSTANTS.OPTOUT_KEY];
+      if (optOutObj) {
+        var optOut = optOutObj[STRING_CONSTANTS.OPTOUT_KEY];
         if (typeof optOut === 'boolean') {
           profileObj[STRING_CONSTANTS.CT_OPTOUT_KEY] = optOut;
           //should be true when user wants to opt in
           isOptInRequest = !optOut;
         }
       }
-      if (privacyObj.hasOwnProperty(STRING_CONSTANTS.USEIP_KEY)) {
-        var useIP = privacyObj[STRING_CONSTANTS.USEIP_KEY];
-        if (typeof useIP === 'boolean') {
-          wiz.setMetaProp(STRING_CONSTANTS.USEIP_KEY, useIP);
-        }
-      }
+      
+      var useIP = (ipObj && typeof ipObj[STRING_CONSTANTS.USEIP_KEY] === 'boolean') ? ipObj[STRING_CONSTANTS.USEIP_KEY] : false;  
+      wiz.setMetaProp(STRING_CONSTANTS.USEIP_KEY, useIP);
+
       if (!wzrk_util.isObjectEmpty(profileObj)) {
         data['type'] = "profile";
         data['profile'] = profileObj;
@@ -1436,7 +1448,7 @@ function __wizrocket() {
 
     if (typeof user['birthday'] != STRING_CONSTANTS.UNDEFINED) {
       var yyyymmdd = user['birthday'].split('-'); //comes in as "1976-07-27"
-      profileData['DOB'] = $WZRK_WR.setDate(yyyymmdd[0] + yyyymmdd[1] + yyyymmdd[2]);
+      profileData['DOB'] = window['$WZRK_WR'].setDate(yyyymmdd[0] + yyyymmdd[1] + yyyymmdd[2]);
     }
 
 
@@ -1519,7 +1531,7 @@ function __wizrocket() {
 
     if (typeof user['birthday'] !== "undefined") {
       var mmddyy = user['birthday'].split('/'); //comes in as "08/15/1947"
-      profileData['DOB'] = $WZRK_WR.setDate(mmddyy[2] + mmddyy[0] + mmddyy[1]);
+      profileData['DOB'] = window['$WZRK_WR'].setDate(mmddyy[2] + mmddyy[0] + mmddyy[1]);
     }
     return profileData;
   };
@@ -1708,7 +1720,7 @@ function __wizrocket() {
       return gcookie;
     }
     if (wzrk_util.isLocalStorageSupported()) {
-      var value = localStorage[STRING_CONSTANTS.GCOOKIE_NAME];
+      var value = window['localStorage'][STRING_CONSTANTS.GCOOKIE_NAME];
       if (wiz.isValueValid(value)) {
         try {
           guid = JSON.parse(decodeURIComponent(value));
@@ -1850,6 +1862,7 @@ function __wizrocket() {
           if (kId_from_LS != null && kId_from_LS["id"] && resume) {
             var guidFromLRUCache = LRU_CACHE.cache[kId_from_LS["id"]];
             if (!guidFromLRUCache) {
+              wiz.saveToLSorCookie(STRING_CONSTANTS.FIRE_PUSH_UNREGISTERED, true)
               LRU_CACHE.set(kId_from_LS["id"], global);
             }
           }
@@ -1859,7 +1872,7 @@ function __wizrocket() {
           );
 
           var lastK = LRU_CACHE.getSecondLastKEY();
-          if(lastK !== -1) {
+          if(wiz.readFromLSorCookie(STRING_CONSTANTS.FIRE_PUSH_UNREGISTERED) && lastK !== -1) {
             var lastGUID = LRU_CACHE.cache[lastK];
             unregisterTokenForGuid(lastGUID);
           }
@@ -2063,7 +2076,7 @@ function __wizrocket() {
       }
       url = wiz.addARPToRequest(url, skipARP);
     }
-    // url = addUseIPToRequest(url);
+    url = addUseIPToRequest(url);
     url = wiz.addToURL(url, "r", new Date().getTime()); // add epoch to beat caching of the URL
     if (wizrocket.hasOwnProperty("plugin")) {
       //used to add plugin name in request parameter
@@ -2077,7 +2090,6 @@ function __wizrocket() {
     while(ctCbScripts[0]) {
         ctCbScripts[0].parentNode.removeChild(ctCbScripts[0]);
     }
-  
     var s = doc.createElement("script");
     s.setAttribute("type", "text/javascript");
     s.setAttribute("src", url);
@@ -2310,7 +2322,7 @@ function __wizrocket() {
             if (obj['from'] === "ct" && obj['state'] === "not") {
               wiz.addWizAlertJS().onload = function () {
                 // create our wizrocket popup
-                wzrkPermissionPopup['wizAlert']({
+                window['wzrkPermissionPopup']['wizAlert']({
                   'title': titleText,
                   'body': bodyText,
                   'confirmButtonText': okButtonText,
@@ -2341,7 +2353,7 @@ function __wizrocket() {
     } else {
       wiz.addWizAlertJS().onload = function () {
         // create our wizrocket popup
-        wzrkPermissionPopup['wizAlert']({
+        window['wzrkPermissionPopup']['wizAlert']({
           'title': titleText,
           'body': bodyText,
           'confirmButtonText': okButtonText,
@@ -2401,25 +2413,6 @@ function __wizrocket() {
         }
         if (typeof targetingMsgJson[STRING_CONSTANTS.DISPLAY]['wmc'] != STRING_CONSTANTS.UNDEFINED) {
           totalSessionLimit = parseInt(targetingMsgJson[STRING_CONSTANTS.DISPLAY]['wmc'], 10);
-        }
-
-
-        function incrCount(obj, campaignId, excludeFromFreqCaps) {
-          var currentCount = 0, totalCount = 0;
-          if (typeof obj[campaignId] != STRING_CONSTANTS.UNDEFINED) {
-            currentCount = obj[campaignId];
-          }
-          currentCount++;
-          if (typeof obj['tc'] != STRING_CONSTANTS.UNDEFINED) {
-            totalCount = obj['tc'];
-          }
-          //if exclude from caps then dont add to total counts
-          if (excludeFromFreqCaps < 0) {
-            totalCount++;
-          }
-
-          obj['tc'] = totalCount;
-          obj[campaignId] = currentCount;
         }
 
 
@@ -2484,6 +2477,24 @@ function __wizrocket() {
         targetingMsgJson[STRING_CONSTANTS.DISPLAY]['delay'] = 0;
         setTimeout(wiz.tr, delay * 1000, msg);
         return false;
+      }
+
+      function incrCount(obj, campaignId, excludeFromFreqCaps) {
+        var currentCount = 0, totalCount = 0;
+        if (typeof obj[campaignId] != STRING_CONSTANTS.UNDEFINED) {
+          currentCount = obj[campaignId];
+        }
+        currentCount++;
+        if (typeof obj['tc'] != STRING_CONSTANTS.UNDEFINED) {
+          totalCount = obj['tc'];
+        }
+        //if exclude from caps then dont add to total counts
+        if (excludeFromFreqCaps < 0) {
+          totalCount++;
+        }
+
+        obj['tc'] = totalCount;
+        obj[campaignId] = currentCount;
       }
 
       incrCount(sessionObj, campaignId, excludeFromFreqCaps);
@@ -2652,7 +2663,7 @@ function __wizrocket() {
       //direct html
       if (targetingMsgJson['msgContent']['type'] === 1) {
         html = targetingMsgJson['msgContent']['html'];
-        html = html.replace('##campaignId##', campaignId);
+        html = html.replace(/##campaignId##/g, campaignId);
       } else {
         var css = '' +
             '<style type="text/css">' +
@@ -2863,7 +2874,7 @@ function __wizrocket() {
       //direct html
       if (targetingMsgJson['msgContent']['type'] == 1) {
         html = targetingMsgJson['msgContent']['html'];
-        html = html.replace('##campaignId##', campaignId);
+        html = html.replace(/##campaignId##/g, campaignId);
       } else {
         var css = '' +
             '<style type="text/css">' +
@@ -3268,7 +3279,7 @@ function __wizrocket() {
         key = key + String.fromCharCode(i + 97);
       }
 
-      for (var i = 0; i < 10; i++) {
+      for (i = 0; i < 10; i++) {
         key = key + i;
       }
 
@@ -3716,7 +3727,7 @@ function __wizrocket() {
               sanitizedKey = wzrk_util.sanitize(key, unsupportedKeyCharRegex);
               if (sanitizedKey.length > 1024) {
                 sanitizedKey = sanitizedKey.substring(0, 1024);
-                $WZRK_WR.reportError(520, sanitizedKey + "... length exceeded 1024 chars. Trimmed.");
+                window['$WZRK_WR'].reportError(520, sanitizedKey + "... length exceeded 1024 chars. Trimmed.");
               }
             } else {
               sanitizedKey = key;
@@ -3732,7 +3743,7 @@ function __wizrocket() {
           val = wzrk_util.sanitize(o, unsupportedValueCharRegex);
           if (val.length > 1024) {
             val = val.substring(0, 1024);
-            $WZRK_WR.reportError(521, val + "... length exceeded 1024 chars. Trimmed.");
+            window['$WZRK_WR'].reportError(521, val + "... length exceeded 1024 chars. Trimmed.");
           }
         } else {
           val = o;
@@ -3748,8 +3759,8 @@ function __wizrocket() {
 
     isLocalStorageSupported: function () {
       try {
-        window.localStorage.setItem('wzrk_debug', '12345678');
-        window.localStorage.removeItem('wzrk_debug');
+        window['localStorage'].setItem('wzrk_debug', '12345678');
+        window['localStorage'].removeItem('wzrk_debug');
         return 'localStorage' in window && window['localStorage'] !== null;
       } catch (e) {
         return false;
@@ -3759,7 +3770,7 @@ function __wizrocket() {
     getCampaignObject: function () {
       var campObj = {};
       if (wzrk_util.isLocalStorageSupported()) {
-        campObj = localStorage[STRING_CONSTANTS.CAMP_COOKIE_NAME];
+        campObj = window['localStorage'][STRING_CONSTANTS.CAMP_COOKIE_NAME];
         if (typeof campObj != STRING_CONSTANTS.UNDEFINED) {
           campObj = JSON.parse(decodeURIComponent(campObj).replace(singleQuoteRegex, "\""));
         } else {
@@ -3772,7 +3783,7 @@ function __wizrocket() {
     saveCampaignObject: function (campaignObj) {
       if (wzrk_util.isLocalStorageSupported()) {
         var campObj = JSON.stringify(campaignObj);
-        localStorage[STRING_CONSTANTS.CAMP_COOKIE_NAME] = encodeURIComponent(campObj);
+        window['localStorage'][STRING_CONSTANTS.CAMP_COOKIE_NAME] = encodeURIComponent(campObj);
       }
     },
 
@@ -3820,9 +3831,9 @@ function __wizrocket() {
 
 } // function __wizrocket
 
-$WZRK_WR = new __wizrocket();
-$CLTP_WR = $WZRK_WR;
-$WZRK_WR.init(); //this should always be the last in the JS file, as it needs all vars/functions to be defined to work.
+window['$WZRK_WR'] = new __wizrocket();
+window['$CLTP_WR'] = window['$WZRK_WR'];
+window['$WZRK_WR'].init(); //this should always be the last in the JS file, as it needs all vars/functions to be defined to work.
 
 
 /**
